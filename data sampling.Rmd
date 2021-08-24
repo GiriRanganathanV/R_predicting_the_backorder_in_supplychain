@@ -1,0 +1,49 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(ROSE)
+```
+
+```{r}
+table(train$went_on_backorder)
+prop.table(table(train$went_on_backorder))
+```
+```{r}
+train$potential_issue = as.factor(train$potential_issue)
+train[18:23] = lapply(train[18:23], as.factor)
+str(train)
+```
+
+
+```{r}
+ind=sample(2,nrow(train),replace=TRUE,prob=c(0.7,0.3))
+train1=train[ind==1,]
+train2=train[ind==2,]
+```
+
+
+```{r}
+library(rpart)
+tree1<- rpart(went_on_backorder ~ ., data = train1)
+pred.tree1 <- predict(tree1, newdata = train2)
+```
+
+```{r}
+pred.tree1[1:20,]
+```
+```{r}
+#over sampling
+data_balanced_over <- ovun.sample(went_on_backorder ~ ., data = train1, method = "over")$data
+table(data_balanced_over$went_on_backorder)
+prop.table(table(data_balanced_over$went_on_backorder))
+```
+
+
+```{r}
+data.rose <- ROSE(went_on_backorder ~ ., data = train1, seed = 1)$data
+table(data.rose$went_on_backorder)
+```
+

@@ -1,0 +1,181 @@
+---
+title: "G5 Group 2"
+output:
+  html_document:
+    df_print: paged
+---
+#installing the packages
+```{r}
+library(ROSE)
+library(caTools)
+library(randomForest)
+library(dplyr)
+library(e1071)
+library(tidyr)
+library(tidyverse)
+library(plyr)
+library(ggpubr)
+```
+
+#Loading the test and train data
+```{r}
+train = read.csv("Competition_Train.csv")
+test = read.csv("Competition_Test.csv")
+str(train)
+str(test)
+```
+
+#We can convert categorical variables to appropriate types
+```{r}
+train$potential_issue = as.factor(train$potential_issue)
+train[18:23] = lapply(train[18:23], as.factor)
+str(train)
+test$potential_issue = as.factor(test$potential_issue)
+test[18:22] = lapply(test[18:22], as.factor)
+str(test)
+```
+
+#EDA:First we check the skewness of the data by performing univariate analysis
+
+```{r}
+library(e1071)
+skewness(train$sku)
+skewness(train$national_inv)
+skewness(train$lead_time)
+skewness(train$in_transit_qty)
+skewness(train$forecast_3_month)
+skewness(train$forecast_6_month)
+skewness(train$forecast_9_month)
+skewness(train$sales_1_month)
+skewness(train$sales_3_month)
+skewness(train$sales_6_month)
+skewness(train$sales_9_month)
+skewness(train$min_bank)
+skewness(train$pieces_past_due)
+skewness(train$perf_6_month_avg)
+skewness(train$perf_12_month_avg)
+skewness(train$local_bo_qty)
+skewness(train$pieces_past_due)
+```
+
+#separating numerical data for analaysis
+```{r}
+numericData <- train[sapply(train, is.numeric)]
+```
+
+#plotting the skewness in histogram
+```{r}
+numericData%>%keep(is.numeric)%>%
+  gather()%>%
+  ggplot(aes(value))+facet_wrap(~key,scales = "free")+geom_density(color="blue",fill="red")
+
+```
+
+#since most of the data is highly skewed we use log10 transformation to normalise the data inorder to build better predictive models
+```{r}
+train$national_inv=log10(abs(train$national_inv)+1)
+train$lead_time=log10(abs(train$lead_time)+1)
+train$in_transit_qty=log10(abs(train$in_transit_qty)+1)
+train$forecast_3_month=log10(abs(train$forecast_3_month)+1)
+train$forecast_6_month=log10(abs(train$forecast_6_month)+1)
+train$forecast_9_month=log10(abs(train$forecast_9_month)+1)
+train$sales_1_month=log10(abs(train$sales_1_month)+1)
+train$sales_3_month=log10(abs(train$sales_3_month)+1)
+train$sales_6_month=log10(abs(train$sales_6_month)+1)
+train$sales_9_month=log10(abs(train$sales_9_month)+1)
+train$min_bank=log10(abs(train$min_bank)+1)
+train$pieces_past_due=log10(abs(train$pieces_past_due)+1)
+train$perf_6_month_avg=log10(abs(train$perf_6_month_avg)+1)
+train$perf_12_month_avg=log10(abs(train$perf_12_month_avg)+1)
+train$local_bo_qty=log10(abs(train$local_bo_qty)+1)
+train$pieces_past_due=log10(abs(train$pieces_past_due)+1)
+
+```
+
+#the are few independent varibales displaying high correlation which leads to multi collinearity. Inorder to visualise the correlation we use the heat map.
+```{r}
+corr <- round(cor(numericData, use = "pairwise.complete.obs"), 2)
+tail(corr)
+library(reshape2)
+melted_cormat <- melt(corr, na.rm = TRUE)
+head(melted_cormat)
+library(ggplot2)
+ggplot(data = melted_cormat, aes(x = Var1, y = Var2, fill = value)) + geom_tile()
+library(ggcorrplot)
+ggcorrplot(corr)
+```
+
+#finding the highly correlated variables.By omitting the highly correlated variables we can built a better model by wise variable selection method.
+```{r}
+descrCor <- cor(numericData)
+descrCor
+highlyCorrelated <- findCorrelation(descrCor, cutoff=0.7)
+highlyCorrelated
+highlyCorCol <- colnames(numericData)[highlyCorrelated]
+highlyCorCol
+```
+
+
+#checking for class imbalance. Since the class imbalance in the target variable can lead to reduction in accuracy of the model, we check the class imbalance and handle them.
+```{r}
+barplot(prop.table(table(train$went_on_backorder)),col=rainbow(2),yrow=c(0,0.7),main="class distribution")
+```
+
+#From the bar plot its evident the target variable is highly imbalanced hence we try over and under sampling to handle the class imbalance.
+```{r}
+#over sampling
+data_balanced_over <- ovun.sample(went_on_backorder ~ ., data = train, method = "under")$data
+table(data_balanced_over$went_on_backorder)
+prop.table(table(data_balanced_over$went_on_backorder))
+```
+#logistic regression model: We the model in 
+```{r}
+model_1=glm(went_on_backorder ~ sales_1_month+in_transit_qty+national_inv+forecast_9_month+oe_constraint, data = data_balanced_over,family = "binomial")
+summary(model_1)
+```
+
+#RandomForest model
+```{r}
+library(caTools)
+library(randomForest)
+```
+#we first create a random model without hyperparamters
+```{r}
+set.seed(333)
+rf<-randomForest(went_on_backorder~.-sku,data=train)
+
+```
+
+#Tuning Rf
+```{r}
+t=tuneRF(train[,-23],stepFactor = 0.5,plot = TRUE,ntreeTry = 200,trace = TRUE,improve = 0.05)
+plot(rf)
+```
+
+#Using the tuneRf function we select the hyperparameter values and we apply them in the model
+```{r}
+set.seed(333)
+rf <- randomForest(went_on_backorder~.-sku,data=data_balanced_over,ntree=200,nodesize=0,mtry=12)
+summary(rf)
+```
+
+#variable importance interpreation from the model
+```{r}
+varImpPlot(rf)
+importance(rf)
+varUsed(rf)
+```
+
+#we make prediction on the test data set.
+```{r}
+PredBest = predict(rf, newdata = test, type = "class")
+PredTest = data.frame(test$sku, PredBest)
+str(PredTest)
+```
+#writing the prediction on to the excel file for submission. 
+```{r}
+colnames(PredTest) = c("sku", "went_on_backorder")
+str(PredTest)
+write.csv(PredTest, "Sample_Submission.csv", row.names = FALSE)
+```
+
